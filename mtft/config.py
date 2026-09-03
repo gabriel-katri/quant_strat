@@ -31,7 +31,9 @@ FRED_SERIES = {
     "aaa": "AAA",           # Moody's Aaa corporate yield (robustness)
 }
 
-PASTOR_STAMBAUGH_URL = "http://finance.wharton.upenn.edu/~stambaug/liq_data_1962_2022.csv"
+PASTOR_STAMBAUGH_URL = (
+    "https://research.chicagobooth.edu/-/media/research/famamiller/data/liq_data_1962_2019.txt"
+)
 
 # Gold series was discontinued on FRED (LBMA licensing). Fall back to a
 # Stooq daily spot-gold series for the Step 9 robustness check.
@@ -43,13 +45,15 @@ GOLD_STOOQ_URL = "https://stooq.com/q/d/l/?s=xauusd&i=m"
 FACTORS = ["Mkt-RF", "SMB", "HML", "RMW", "CMA"]
 FACTOR_LABELS = {"Mkt-RF": "MKT", "SMB": "SMB", "HML": "HML", "RMW": "RMW", "CMA": "CMA"}
 
-# Data-availability note (Step 0, Macro Driver 4): the Pastor-Stambaugh
-# liquidity file is no longer hosted at the paper-era URL (confirmed 404).
-# The VIX fallback (Option B) only starts in 1990, which would truncate the
-# full 1968-2026 sample by more than half and break the "OOS from 1980" test
-# entirely. We follow the spec's own Option C for the core pipeline (3 macro
-# drivers, full sample) and fold the VIX-augmented 4-driver spec into the
-# Step 9 robustness checks on its own (shorter) subsample instead.
+# Data-availability note (Step 0, Macro Driver 4): the paper-era Wharton URL
+# for the Pastor-Stambaugh liquidity file is dead, but the same traded
+# liquidity factor (LIQ_V) is mirrored on the Fama-Miller Center's data page
+# (column 4 of PASTOR_STAMBAUGH_URL) back to 1968 -- it just stops in Dec
+# 2019, so it can't cover the extended 2020-2026 sample. The core pipeline
+# (Steps 1-8) still runs on 3 macro drivers over the full 1968-2026 sample
+# for consistency; the now-real (not VIX-proxy) 4-driver liquidity panel is
+# used for the Step 9 robustness check and is naturally bounded at 2019-12
+# by its source rather than by VIX's 1990 start.
 MACRO_DRIVERS = ["oil", "pot_output", "term_spread"]
 MACRO_DRIVERS_EXT = ["oil", "pot_output", "term_spread", "liquidity"]
 

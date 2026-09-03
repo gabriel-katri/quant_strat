@@ -2,9 +2,9 @@
 Step 0: Data acquisition.
 
 Downloads the Fama-French 5 factors (Kenneth French's data library) and the
-four macro drivers (FRED, with a Pastor-Stambaugh -> VIX fallback waterfall
-for liquidity), converts everything to quarterly log/simple returns, and
-aligns all series onto a common end-of-quarter index.
+four macro drivers (FRED, with a Pastor-Stambaugh traded liquidity factor ->
+VIX fallback waterfall for liquidity), converts everything to quarterly
+log/simple returns, and aligns all series onto a common end-of-quarter index.
 
 Every live download goes through `_cached`, which writes a local pickle on
 success and falls back to the last cached copy if the live fetch fails (no
@@ -161,25 +161,52 @@ def build_term_spread_driver() -> pd.Series:
     return spread.rename("term_spread")
 
 
-def _try_pastor_stambaugh_liquidity() -> pd.Series | None:
-    try:
-        resp = requests.get(PASTOR_STAMBAUGH_URL, timeout=10)
+def _parse_pastor_stambaugh_text(raw_text: str) -> pd.Series:
+    """Parse the Fama-Miller mirror of the PS liquidity file.
+
+    Whitespace-delimited, '%'-prefixed header/comment lines, columns are
+    [month(YYYYMM), agg liq level, non-traded liq innovation, traded liq
+    (LIQ_V)]. LIQ_V is -99 before the traded factor can be computed (pre-
+    1968); those rows are dropped.
+    """
+    rows = []
+    for line in raw_text.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("%"):
+            continue
+        parts = stripped.split()
+        if len(parts) < 4:
+            continue
+        rows.append((parts[0], parts[3]))
+
+    df = pd.DataFrame(rows, columns=["month", "liq_v"])
+    df["liq_v"] = pd.to_numeric(df["liq_v"], errors="coerce").replace(-99.0, np.nan)
+    df["date"] = pd.to_datetime(df["month"], format="%Y%m") + pd.offsets.MonthEnd(0)
+    return df.set_index("date")["liq_v"].dropna()
+
+
+def _download_pastor_stambaugh_liquidity() -> pd.Series:
+    def _fetch() -> pd.Series:
+        resp = requests.get(PASTOR_STAMBAUGH_URL, timeout=_HTTP_TIMEOUT)
         resp.raise_for_status()
-        df = pd.read_csv(io.StringIO(resp.text))
-        return None  # placeholder; real parsing only reached if download succeeds
-    except Exception:
-        return None
+        return _parse_pastor_stambaugh_text(resp.text)
+
+    return _cached("pastor_stambaugh_liquidity", _fetch)
 
 
 def build_liquidity_driver(cfg: Config) -> tuple[pd.Series, str]:
-    """Macro driver 4: Pastor-Stambaugh traded liquidity factor, else -VIX proxy.
+    """Macro driver 4: Pastor-Stambaugh traded liquidity factor (LIQ_V), else -VIX proxy.
 
-    Returns (series, source_label). PS liquidity data is no longer hosted at
-    the paper-era URL (confirmed 404 as of this run), so we fall back to
-    Option B: end-of-quarter VIX, inverted, as an illiquidity/liquidity proxy.
+    Returns (series, source_label). Falls back to Option B (end-of-quarter
+    VIX, inverted) only if the Fama-Miller mirror is unreachable and no
+    cached copy exists.
     """
-    ps = _try_pastor_stambaugh_liquidity()
-    if ps is not None:
+    try:
+        ps = _download_pastor_stambaugh_liquidity()
+    except Exception:
+        ps = None
+
+    if ps is not None and len(ps) > 0:
         return ps.resample(_QUARTER_END).sum().rename("liquidity"), "Pastor-Stambaugh"
 
     vix = _download_fred_series(FRED_SERIES["vix"])

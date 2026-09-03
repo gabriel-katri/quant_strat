@@ -1,0 +1,6 @@
+Factor,VAR lag (AIC),N obs,Reject r=0 @95%,Cointegrating rank
+MKT_RF,3,146,True,1
+SMB,3,146,True,1
+HML,3,146,True,1
+RMW,3,146,True,1
+CMA,3,146,True,1
